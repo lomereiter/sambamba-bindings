@@ -38,6 +38,19 @@ typedef struct {
 } bam_read_s;                   
 typedef bam_read_s* bam_read_t; /* single read */
 
+typedef void* sam_header_t; /* SAM header */
+
+/* For now, the interface for SAM header is very limited:
+   1) get header from a BAM file
+   2) get its text representation
+   3) create new header from text
+
+   (anyway, text manipulation is not a big deal in most dynamic languages.)
+ */
+sam_header_t bam_reader_header(bam_reader_t);
+dstring_s* df_sam_header_text(sam_header_t);
+sam_header_t sam_header_new(char* header_text);
+
 /* -------------------------- D ranges of reads ----------------------------- */
 
 typedef void* bam_read_range_t; /* range (in D sense) of BAM reads */
@@ -85,7 +98,7 @@ typedef struct {
 
 typedef void* task_pool_t; /* D task pool */
 task_pool_t task_pool_new(uint32_t n_threads);
-int task_pool_finish(task_pool_t); /* MUST be called to terminate the threads */
+int32_t task_pool_finish(task_pool_t); /* MUST be called to terminate the threads */
 
 /* constructors */
 bam_reader_t bam_reader_new(const char* filename);
@@ -275,3 +288,29 @@ char* f_bam_pileup_column_bases(pileup_column_t);
 
 /* base qualities (-1 on deletions) */
 aint8_s f_bam_pileup_column_base_quals(pileup_column_t);
+
+/* ---------------------------- BAM writer ---------------------------------- */
+typedef void* bam_writer_t;
+
+/* default compression level is -1, the number can be in range -1 .. 9;
+   BAM magic is automatically written during the construction;
+   NULL return value indicates that an exception has occurred. */
+bam_writer_t bam_writer_new(char* filename, int32_t compression_level);
+bam_writer_t bam_writer_new2(char* filename, int32_t, task_pool_t);
+
+/* the following functions return 0 if everything is OK, otherwise -1. */
+
+/* next step after construction is to write SAM header */
+int32_t bam_writer_push_header(bam_writer_t, sam_header_t);
+
+/* then reference sequence information follows */
+int32_t bam_writer_push_ref_info(bam_writer_t, reference_info_s* refs, size_t nrefs);
+
+/* and then reads */
+int32_t bam_writer_push_read(bam_writer_t, bam_read_t);
+
+/* don't forget to close the stream! This also adds BGZF EOF block. */
+int32_t bam_writer_close(bam_writer_t);
+
+/* flushes current BGZF block; may be useful in some cases */
+int32_t bam_writer_flush(bam_writer_t);

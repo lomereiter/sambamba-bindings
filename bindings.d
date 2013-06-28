@@ -1,7 +1,10 @@
 module testlib;
 
+import bio.sam.header;
 import bio.bam.reader;
+import bio.bam.writer;
 import bio.bam.read;
+import bio.bam.referenceinfo;
 import bio.bam.pileup;
 import bio.bam.thirdparty.msgpack;
 
@@ -325,6 +328,18 @@ string returnNullOnException(string code) {
     }`;
 }
 
+string returnMinusOneOnException(string code) {
+    return "try {"
+        ~ code ~ `
+        return 0;
+    } catch (Throwable e) {
+        import std.stdio;
+        debug { writeln("*** Caught exception *** ", e); }
+        setErrorMessage(e.msg);
+        return -1;
+    }`;
+}
+
 // ------------------------- end of function/method wrapping ------------------------------------
 
 alias constructorWrapperNothrow constructorN;
@@ -590,3 +605,52 @@ mixin methodN!("bam_pileup_read_cigar_operation_offset", BamPileupRead, "cigar_o
 mixin methodN!("bam_pileup_read_cigar_before", BamPileupRead, "cigar_before");
 mixin methodN!("bam_pileup_read_cigar_after", BamPileupRead, "cigar_after");
 mixin methodN!("bam_pileup_read_query_offset", BamPileupRead, "query_offset");
+
+BamWriter bamWriterNew(char* filename, int compression_level) {
+    mixin(returnNullOnException(q{
+        return new BamWriter(to!string(filename), compression_level);
+    }));
+}
+
+BamWriter bamWriterNew2(char* filename, int compression_level, TaskPool pool) {
+    mixin(returnNullOnException(q{
+        return new BamWriter(to!string(filename), compression_level, pool);
+    }));
+}
+
+int bamWriterPushHeader(BamWriter writer, SamHeader header) {
+    mixin(returnMinusOneOnException(q{ writer.writeSamHeader(header); }));
+}
+
+int bamWriterPushReferenceInfo(BamWriter writer, ReferenceSequenceInfo* info, size_t n) {
+    mixin(returnMinusOneOnException(q{ 
+        auto duped_info = info[0 .. n].dup;
+        foreach (ref seq; duped_info)
+            seq = ReferenceSequenceInfo(seq.name.idup, seq.length);
+        writer.writeReferenceSequenceInfo(duped_info); 
+    }));
+}
+
+int bamWriterPushRead(BamWriter writer, BamRead read) {
+    mixin(returnMinusOneOnException(q{ writer.writeRecord(read); }));
+}
+
+int bamWriterClose(BamWriter writer) { mixin(returnMinusOneOnException(q{ writer.finish(); })); }
+int bamWriterFlush(BamWriter writer) { mixin(returnMinusOneOnException(q{ writer.flush(); })); }
+
+mixin functionN!("bam_writer_new", "bamWriterNew", char*, int);
+mixin functionN!("bam_writer_new2", "bamWriterNew2", char*, int, TaskPool);
+mixin functionN!("bam_writer_push_header", "bamWriterPushHeader", BamWriter, SamHeader);
+mixin functionN!("bam_writer_push_ref_info", "bamWriterPushReferenceInfo", BamWriter, ReferenceSequenceInfo*, size_t);
+mixin functionN!("bam_writer_push_read", "bamWriterPushRead", BamWriter, BamRead);
+mixin functionN!("bam_writer_close", "bamWriterClose", BamWriter);
+mixin functionN!("bam_writer_flush", "bamWriterFlush", BamWriter);
+
+SamHeader samHeaderNew(char* text) {
+    mixin(returnNullOnException(q{ return new SamHeader(to!string(text)); }));
+}
+
+auto samHeaderText(SamHeader header) { return d_array(header.text); }
+mixin methodN!("bam_reader_header", BamReader, "header");
+mixin functionN!("sam_header_new", "samHeaderNew", char*);
+mixin functionN!("df_sam_header_text", "samHeaderText", SamHeader);

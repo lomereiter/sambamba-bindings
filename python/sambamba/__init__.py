@@ -146,8 +146,8 @@ class BamRead(object):
         if len(tag) != 2:
             raise "Invalid tag: %s" % tag
         typeid = _lib.bam_read_tag_type_id(self._d_read, tag)
-        global tag_getters
-        return tag_getters[typeid](self._d_read, tag)
+        global _tag_getters
+        return _tag_getters[typeid](self._d_read, tag)
 
     @property
     def cigar(self):
@@ -229,6 +229,10 @@ class BamReaderException(Exception):
     def __init__(self):
         self.args = (_ffi.string(_lib.last_error_message()),)
 
+class BamWriterException(Exception):
+    def __init__(self):
+        self.args = (_ffi.string(_lib.last_error_message()),)
+
 class BamReferenceSequence(object):
     def __init__(self, id, name, length, d_bam):
         self.id = id
@@ -261,7 +265,19 @@ class BamReader(object):
 
     def __del__(self):
         _lib.d_free(self._d_bam)
-        _lib.task_pool_finish(_d_tp)
+        _lib.task_pool_finish(self._d_tp)
+        _lib.d_free(self._d_tp)
+
+    @property
+    def header(self):
+        """
+        SAM header (text)
+        """
+        header = _lib.bam_reader_header(self._d_bam)
+        dtext = _lib.df_sam_header_text(header)
+        text = _ffi.string(dtext.buf, dtext.len)
+        _lib.d_free(dtext)
+        return text
 
     @property
     def references(self):
@@ -274,7 +290,6 @@ class BamReader(object):
         return refs
 
     def createIndex(self, overwrite_if_exists=False):
-        print self._d_bam
         _lib.bam_reader_create_index(self._d_bam, overwrite_if_exists)
 
     def reads(self):
@@ -292,6 +307,54 @@ class BamReader(object):
     def __iter__(self):
         return self.reads()
 
+class BamWriter(object):
+    def __init__(self, filename, threads=1, compression_level=-1):
+        self._task_pool = _lib.task_pool_new(threads)
+        self._d_writer = _lib.bam_writer_new2(filename, compression_level, self._task_pool)
+        if self._d_writer == _ffi.NULL:
+            raise BamWriterException()
+
+    def writeHeader(self, sam_header_text):
+        d_header = _lib.sam_header_new(sam_header_text)
+        if d_header == _ffi.NULL:
+            raise BamWriterException()
+        ret = _lib.bam_writer_push_header(self._d_writer, d_header)
+        _lib.d_free(d_header)
+        if ret < 0:
+            raise BamWriterException()
+
+    def writeRefs(self, references):
+        """
+        references must be a list of BamReferenceSequence objects
+        """
+        n = len(references)
+        info = _ffi.new("reference_info_s[]", n)
+        for i, ref in enumerate(references):
+            info[i].name_len = len(ref.name)
+            info[i].name_buf = _ffi.new("char[]", ref.name)
+            info[i].length = ref.length;
+        ret = _lib.bam_writer_push_ref_info(self._d_writer, info, n)
+        if ret < 0:
+            raise BamWriterException()
+
+    def writeRead(self, read):
+        ret = _lib.bam_writer_push_read(self._d_writer, read._d_read)
+        if ret < 0:
+            raise BamWriterException()
+
+    def close(self):
+        """
+        Flush the buffers and append EOF block
+        """
+        ret = _lib.bam_writer_close(self._d_writer)
+        if ret < 0:
+            raise BamWriterException()
+
+    def __del__(self):
+        _lib.bam_writer_close(self._d_writer)
+        _lib.task_pool_finish(self._task_pool)
+        _lib.d_free(self._task_pool)
+        _lib.d_free(self._d_writer)
 
 class BamReadPythonRange(object):
     def __init__(self, callback):
@@ -300,10 +363,6 @@ class BamReadPythonRange(object):
 
     def __del__(self):
         _lib.d_free(self._d_reads) 
-
-    @property
-    def pointer(self):
-        return self._d_reads
   
 def makeDReadIterator(read_iter):
     read_iter = iter(read_iter)
@@ -324,7 +383,7 @@ class Pileup(object):
             self._d_ptr = read_iter._d_reads
         else:
             self._d_iter = makeDReadIterator(read_iter)
-            self._d_ptr = self._d_iter.pointer
+            self._d_ptr = self._d_iter._d_reads
         self._d_pileup = _lib.bam_pileup_new(self._d_ptr, use_md, 
                                             skip_zero_coverage)
         self._d_next_func = _lib.bam_pileup_next
