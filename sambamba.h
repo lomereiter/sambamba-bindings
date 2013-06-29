@@ -10,7 +10,7 @@ enum {
 void attach(); /* must be called to initialize D runtime */
 void detach();
 
-void* memcpy(void* dest, const void* src, size_t n);
+void* memcpy(void* dest, void* src, size_t n);
 void free(void* ptr);
 
 void d_free(void*); /* frees the pointer and notifies D garbage collector */
@@ -33,7 +33,7 @@ typedef void* bam_reader_t; /* BAM reader object */
 
 typedef struct {
     size_t len;          /* length of raw data */
-    char* buf;           /* raw data */
+    uint8_t* buf;           /* raw data */
     bam_reader_t reader; /* parent reader */
 } bam_read_s;                   
 typedef bam_read_s* bam_read_t; /* single read */
@@ -94,11 +94,18 @@ typedef struct {
     size_t len;
 } areference_info_s; /* array containing reference sequence information */
 
+typedef struct {
+    uint8_t* buf;
+    size_t len;
+} buffer_s;
+
 /* --------------------- BAM reader object -------- ------------------------- */
 
 typedef void* task_pool_t; /* D task pool */
 task_pool_t task_pool_new(uint32_t n_threads);
-int32_t task_pool_finish(task_pool_t); /* MUST be called to terminate the threads */
+
+/* MUST be called to terminate the threads */
+int32_t task_pool_finish(task_pool_t); 
 
 /* constructors */
 bam_reader_t bam_reader_new(const char* filename);
@@ -119,6 +126,8 @@ bam_reader_fetch(bam_reader_t, char* refname, uint32_t from, uint32_t to);
 
 /* reference sequences presented in the file */
 areference_info_s bam_reader_references(bam_reader_t); 
+
+/* --------------------------------- BAM read ------------------------------- */
 
 /* get SAM representation of the read */
 dstring_s* df_bam_read_to_sam(bam_read_t);
@@ -142,7 +151,7 @@ int32_t bam_read_position(bam_read_t);
 char bam_read_strand(bam_read_t);
 int32_t bam_read_mate_ref_id(bam_read_t);
 int32_t bam_read_mate_position(bam_read_t);  /* zero-based */
-uint32_t bam_read_flag(bam_read_t);
+uint16_t bam_read_flag(bam_read_t);
 int32_t bam_read_template_length(bam_read_t);
 
 typedef uint32_t cigar_operation_t;
@@ -212,6 +221,20 @@ aint32_s bam_read_int32_array_tag(bam_read_t, const char*);
 auint32_s bam_read_uint32_array_tag(bam_read_t, const char*);
 afloat_s bam_read_float_array_tag(bam_read_t, const char*);
 dstring_s bam_read_string_tag(bam_read_t, const char*);
+
+/* The following functions return a structure with updated 'buf' and 'len'.
+   If the pointer is different from the initial 'buf' field of the read,
+   the data from the buffer must be copied into newly allocated memory. 
+   Otherwise only the length must be updated. */
+buffer_s* df_bam_read_set_char_tag(bam_read_t, const char*, char);
+buffer_s* df_bam_read_set_int8_tag(bam_read_t, const char*, int8_t);
+buffer_s* df_bam_read_set_uint8_tag(bam_read_t, const char*, uint8_t);
+buffer_s* df_bam_read_set_int16_tag(bam_read_t, const char*, int16_t);
+buffer_s* df_bam_read_set_uint16_tag(bam_read_t, const char*, uint16_t);
+buffer_s* df_bam_read_set_int32_tag(bam_read_t, const char*, int32_t);
+buffer_s* df_bam_read_set_uint32_tag(bam_read_t, const char*, uint32_t);
+buffer_s* df_bam_read_set_float_tag(bam_read_t, const char*, float);
+buffer_s* df_bam_read_set_string_tag(bam_read_t, const char*, const char* strz);
 
 /* ----------------------------- Read in a pileup --------------------------- */
 

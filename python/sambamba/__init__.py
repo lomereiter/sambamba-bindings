@@ -6,6 +6,8 @@ with open('sambamba.h', 'r') as f:
 from cffi import FFI
 _ffi = FFI()
 _ffi.cdef(_header)
+_lib = _ffi.dlopen(os.path.join(os.path.dirname(__file__), 'libsambamba.so'))
+_lib.attach()
 
 def _d_arr(type, cdata):
     return _ffi.cast(type + "[%d]" % cdata.len, cdata.buf)
@@ -38,8 +40,25 @@ _tag_getters = [lambda r, t: None] * 256
 for id in _tag_getters_dict:
     _tag_getters[id] = _tag_getters_dict[id]
 
-_charType = _ffi.typeof("char[]")
+_byteType = _ffi.typeof("uint8_t[]")
 _bamReadType = _ffi.typeof("bam_read_s *")
+
+class _tagsetter(object):
+    def __init__(self, typename):
+        _lib = globals()['_lib']
+        self._d_fn = getattr(_lib, 'df_bam_read_set_' + typename + '_tag')
+
+    def __call__(self, _):
+        def wrapper(obj, tag, value):
+            if (len(tag) != 2):
+                raise InvalidTagNameException(tag)
+            arr = self._d_fn(obj._d_read, tag, value)
+            obj._d_read.len = arr.len
+            obj._c_data = _ffi.new(_byteType, arr.len) # !!! keep it alive
+            obj._d_read.buf = obj._c_data
+            _lib.memcpy(obj._c_data, arr.buf, arr.len)
+            _lib.d_free(arr)
+        return wrapper
 
 class CigarOperation(object):
     def __init__(self, int32):
@@ -65,26 +84,10 @@ class CigarOperation(object):
     def consumes_both(self):
         return _lib.bam_cigar_operation_consumes_both(self._d_int32)
 
-class BamRead(object):
-    def __init__(self, d_ptr, auxdata=None):
+class ReadOnlyBamRead(object):
+    def __init__(self, d_ptr):
         self._d_read = d_ptr
-        self._aux = auxdata
-
-    # self._d_read is either obtained via _ffi.new, or it is internal
-    # to some data structure on the D side.
-    # As such, __del__ is not needed. In fact, it's the very reason why
-    # the read contents are copied into memory allocated via _ffi.new,
-    # and not on the D heap--for this would require having a finalizer,
-    # which would cause a huge drop in performance.
-
-    @staticmethod
-    def fromCopy(cdata, csz, reader):
-        _d_read = _ffi.new(_bamReadType)
-        _d_read.len = csz
-        _d_read.buf = cdata
-        _d_read.reader = reader
-        return BamRead(_d_read, cdata)
-
+    
     @property
     def reference_name(self):
         data = _lib.bam_read_reference_name(self._d_read)
@@ -113,7 +116,7 @@ class BamRead(object):
     @property
     def sequence(self):
         len = _lib.bam_read_sequence_length(self._d_read)
-        buf = _ffi.new(_charType, len)
+        buf = _ffi.new(_byteType, len)
         _lib.bam_read_copy_sequence(self._d_read, buf)
         return _ffi.string(buf)
 
@@ -144,7 +147,7 @@ class BamRead(object):
 
     def tag(self, tag):
         if len(tag) != 2:
-            raise "Invalid tag: %s" % tag
+            raise InvalidTagNameException(tag)
         typeid = _lib.bam_read_tag_type_id(self._d_read, tag)
         global _tag_getters
         return _tag_getters[typeid](self._d_read, tag)
@@ -204,6 +207,54 @@ class BamRead(object):
     def is_duplicate(self):
         return _lib.bam_read_is_duplicate(self._d_read)
 
+class BamRead(ReadOnlyBamRead):
+    """
+    Modifiable BAM read
+    """
+    def __init__(self, cdata, csz, reader):
+        _d_read = _ffi.new(_bamReadType)
+        _d_read.len = csz
+        _d_read.buf = cdata
+        _d_read.reader = reader
+        self._c_data = cdata # keep alive
+        ReadOnlyBamRead.__init__(self, _d_read)
+
+    @_tagsetter("char")
+    def setCharTag(self, tag, value):
+        pass
+
+    @_tagsetter("uint8")
+    def setUInt8Tag(self, tag, value):
+        pass
+
+    @_tagsetter("int8")
+    def setInt8Tag(self, tag, value):
+        pass
+
+    @_tagsetter("uint16")
+    def setUInt16Tag(self, tag, value):
+        pass
+    
+    @_tagsetter("int16")
+    def setInt16Tag(self, tag, value):
+        pass
+
+    @_tagsetter("uint32")
+    def setUInt32Tag(self, tag, value):
+        pass
+
+    @_tagsetter("int32")
+    def setInt32Tag(self, tag, value):
+        pass
+
+    @_tagsetter("float")
+    def setFloatTag(self, tag, value):
+        pass
+
+    @_tagsetter("string")
+    def setStringTag(self, tag, value):
+        pass
+
 class BamReadDRange(object):
     def __init__(self, creads):
         self._d_reads = creads
@@ -220,9 +271,9 @@ class BamReadDRange(object):
         sz = _lib.bam_readrange_front_alloc_size(self._d_reads)
         if sz == 0: # empty
             raise StopIteration
-        data = _ffi.new(_charType, sz)
+        data = _ffi.new(_byteType, sz)
         reader = _lib.bam_readrange_front_copy_into_and_pop_front(self._d_reads, data)
-        read = BamRead.fromCopy(data, sz, reader)
+        read = BamRead(data, sz, reader)
         return read
 
 class BamReaderException(Exception):
@@ -232,6 +283,10 @@ class BamReaderException(Exception):
 class BamWriterException(Exception):
     def __init__(self):
         self.args = (_ffi.string(_lib.last_error_message()),)
+
+class InvalidTagNameException(Exception):
+    def __init__(self, tagname):
+        self.args = ("Invalid tag name: %s" % tagname, )
 
 class BamReferenceSequence(object):
     def __init__(self, id, name, length, d_bam):
@@ -444,9 +499,19 @@ class PileupColumn(object):
         """
         return _lib.bam_pileup_column_ref_base(self._d_column)
 
-class PileupRead(BamRead):
+class PileupRead(ReadOnlyBamRead):
+    """
+    WARNING:
+    Pileup read can be used only while operating on the *current column*.
+    It is a read-only interface to the part of internal data structure,
+    and pileup engine is free to move the reads around in the memory 
+    when it advances to the next position on the reference.
+    (More specifically, the pileup engine maintains an array of reads
+     overlapping the current column, and PileupRead merely references 
+     an element of that array for the sake of performance.)
+    """
     def __init__(self, cstruct):
-        BamRead.__init__(self, cstruct.read)
+        ReadOnlyBamRead.__init__(self, cstruct.read)
         self._d_pread = cstruct
         self._d_addr = _ffi.addressof(cstruct)
 
@@ -475,6 +540,3 @@ class PileupRead(BamRead):
     def cigar_after(self):
         d_cigar = _lib.bam_pileup_read_cigar_after(self._d_addr)
         return [CigarOperation(op) for op in d_cigar.buf[0:d_cigar.len]]
-
-_lib = _ffi.dlopen(os.path.join(os.path.dirname(__file__), 'libsambamba.so'))
-_lib.attach()

@@ -396,6 +396,10 @@ size_t frontAllocSize(BamReadRange range) {
     return range.front.size_in_bytes - 4;
 }
 
+ubyte[] getBuffer(BamRead read) {
+    return *(cast(ubyte[]*)(&read));
+}
+
 // Returns pointer to the reader;
 // copies the chunk to the provided buffer;
 // advances the range.
@@ -404,7 +408,7 @@ size_t frontAllocSize(BamReadRange range) {
 // But this way, only two FFI calls per read are needed.
 void* frontCopyIntoAndPopFront(BamReadRange range, ubyte* ptr) {
     auto read = range.front;
-    auto chunk = *(cast(ubyte[]*)(&read));
+    auto chunk = read.getBuffer();
     ptr[0 .. chunk.length] = chunk[];
     ptr[32 + read.name.length] = 0; // HACK _is_slice = false
     auto result = cast(void*)(range.front.reader);
@@ -654,3 +658,26 @@ auto samHeaderText(SamHeader header) { return d_array(header.text); }
 mixin methodN!("bam_reader_header", BamReader, "header");
 mixin functionN!("sam_header_new", "samHeaderNew", char*);
 mixin functionN!("df_sam_header_text", "samHeaderText", SamHeader);
+
+/* ------------------------------- modifying reads ------------------------------------------ */
+auto setTagValue(T)(BamRead read, immutable(char)* tagname, T value) {
+    auto r = read.dup; // TODO: find a way without so much copying
+    r[tagname[0 .. 2]] = value;
+    return d_array(r.getBuffer());
+}
+
+auto bamReadSetStringTagC(BamRead read, immutable(char)* tagname, immutable(char)* value) {
+    auto r = read.dup;
+    r[tagname[0 .. 2]] = to!string(value);
+    return d_array(r.getBuffer());
+}
+
+mixin methodN!("df_bam_read_set_char_tag", BamRead, q{setTagValue!char}, immutable(char)*, char);
+mixin methodN!("df_bam_read_set_int8_tag", BamRead, q{setTagValue!byte}, immutable(char)*, byte);
+mixin methodN!("df_bam_read_set_uint8_tag", BamRead, q{setTagValue!ubyte}, immutable(char)*, ubyte);
+mixin methodN!("df_bam_read_set_int16_tag", BamRead, q{setTagValue!short}, immutable(char)*, short);
+mixin methodN!("df_bam_read_set_uint16_tag", BamRead, q{setTagValue!ushort}, immutable(char)*, ushort);
+mixin methodN!("df_bam_read_set_int32_tag", BamRead, q{setTagValue!int}, immutable(char)*, int);
+mixin methodN!("df_bam_read_set_uint32_tag", BamRead, q{setTagValue!uint}, immutable(char)*, uint);
+mixin methodN!("df_bam_read_set_float_tag", BamRead, q{setTagValue!float}, immutable(char)*, float);
+mixin methodN!("df_bam_read_set_string_tag", BamRead, "bamReadSetStringTagC", immutable(char)*, immutable(char)*);

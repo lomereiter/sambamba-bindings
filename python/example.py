@@ -36,11 +36,18 @@ w.writeHeader(bam.header)
 w.writeRefs(bam.references)
 for r in bam.reads():
     if r.tag('NM') > 2:
-        w.writeRead(r)
+        r.setInt16Tag('NM', -42)
+        assert(r.tag('NM') == -42)
+        r.setStringTag('XW', "don't believe NM tag for this read")
+    w.writeRead(r)
 w.close()
 
 new_bam = BamReader(new_fn)
-print("Reads with NM > 2: %s" % sum(1 for _ in new_bam.reads()))
+print("Reads with NM == -42: %s" % sum(1 for r in new_bam.reads() if r.tag('NM') == -42))
+for read in new_bam.reads():
+    if read.tag('NM') == -42:
+        assert(read.tag('XW') != None)
+
 os.unlink(new_fn)
 os.unlink(filename + ".bai")
 
