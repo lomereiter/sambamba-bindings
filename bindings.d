@@ -474,6 +474,7 @@ mixin methodN!("f_bam_read_extended_cigar", BamRead, "bamReadExtendedCigarC");
 mixin methodN!("bam_read_bases_covered", BamRead, "basesCovered");
 
 mixin methodN!("bam_read_strand", BamRead, "strand");
+extern(C) export char bam_read_mate_strand(BamRead* read) { return read.mate_is_reverse_strand ? '-' : '+'; }
 mixin methodN!("bam_read_base_qualities", BamRead, "base_qualities");
 
 /* -------------------- flag getters ---------------------------------------------------------------------- */
@@ -681,3 +682,27 @@ mixin methodN!("df_bam_read_set_int32_tag", BamRead, q{setTagValue!int}, immutab
 mixin methodN!("df_bam_read_set_uint32_tag", BamRead, q{setTagValue!uint}, immutable(char)*, uint);
 mixin methodN!("df_bam_read_set_float_tag", BamRead, q{setTagValue!float}, immutable(char)*, float);
 mixin methodN!("df_bam_read_set_string_tag", BamRead, "bamReadSetStringTagC", immutable(char)*, immutable(char)*);
+
+mixin methodN!("bam_read_set_ref_id", BamRead, "ref_id", int);
+mixin methodN!("bam_read_set_position", BamRead, "position", int);
+mixin methodN!("bam_read_set_mapping_quality", BamRead, "mapping_quality", ubyte);
+mixin methodN!("bam_read_set_flag", BamRead, "flag", ushort);
+mixin methodN!("bam_read_set_mate_ref_id", BamRead, "mate_ref_id", int);
+mixin methodN!("bam_read_set_mate_position", BamRead, "mate_position", int);
+mixin methodN!("bam_read_set_template_length", BamRead, "template_length", int);
+
+mixin methodN!("bam_read_set_is_paired", BamRead, "is_paired", bool);
+mixin methodN!("bam_read_set_proper_pair", BamRead, "proper_pair", bool);
+mixin methodN!("bam_read_set_is_unmapped", BamRead, "is_unmapped", bool);
+mixin methodN!("bam_read_set_mate_is_unmapped", BamRead, "mate_is_unmapped", bool);
+mixin methodN!("bam_read_set_is_reverse_strand", BamRead, "is_reverse_strand", bool);
+mixin methodN!("bam_read_set_mate_is_reverse_strand", BamRead, "mate_is_reverse_strand", bool);
+mixin methodN!("bam_read_set_is_first_of_pair", BamRead, "is_first_of_pair", bool);
+mixin methodN!("bam_read_set_is_second_of_pair", BamRead, "is_second_of_pair", bool);
+mixin methodN!("bam_read_set_is_secondary_alignment", BamRead, "is_secondary_alignment", bool);
+mixin methodN!("bam_read_set_failed_quality_control", BamRead, "failed_quality_control", bool);
+mixin methodN!("bam_read_set_is_duplicate", BamRead, "is_duplicate", bool);
+extern(C) export void bam_read_set_strand(BamRead* read, char dir) { read.strand = dir; }
+extern(C) export void bam_read_set_mate_strand(BamRead* read, char dir) { 
+    read.mate_is_reverse_strand = (dir == '-');
+}

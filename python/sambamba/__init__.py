@@ -138,7 +138,7 @@ class ReadOnlyBamRead(object):
         return _lib.bam_read_mate_position(self._d_read)
 
     @property
-    def flag(self):
+    def flags(self):
         return _lib.bam_read_flag(self._d_read)
 
     @property
@@ -182,10 +182,7 @@ class ReadOnlyBamRead(object):
 
     @property
     def mate_strand(self):
-        if _lib.bam_read_mate_is_reverse_strand(self._d_read):
-            return '-'
-        else:
-            return '+'
+        return _lib.bam_read_mate_strand(self._d_read)
 
     @property
     def is_first_of_pair(self):
@@ -218,6 +215,76 @@ class BamRead(ReadOnlyBamRead):
         _d_read.reader = reader
         self._c_data = cdata # keep alive
         ReadOnlyBamRead.__init__(self, _d_read)
+
+    @ReadOnlyBamRead.reference_id.setter
+    def reference_id(self, new_id):
+        _lib.bam_read_set_ref_id(self._d_read, new_id)
+
+    @ReadOnlyBamRead.position.setter
+    def position(self, new_pos):
+        _lib.bam_read_set_position(self._d_read, new_pos)
+
+    @ReadOnlyBamRead.quality.setter
+    def quality(self, new_qual):
+        _lib.bam_read_set_mapping_quality(self._d_read, new_qual)
+
+    @ReadOnlyBamRead.flags.setter
+    def flags(self, new_flags):
+        _lib.bam_read_set_flag(self._d_read, new_flags)
+
+    @ReadOnlyBamRead.mate_reference_id.setter
+    def mate_reference_id(self, new_mate_ref_id):
+        _lib.bam_read_set_mate_ref_id(self._d_read, new_mate_ref_id)
+
+    @ReadOnlyBamRead.mate_position.setter
+    def mate_position(self, new_mate_pos):
+        _lib.bam_read_set_mate_position(self._d_read, new_mate_pos)
+
+    @ReadOnlyBamRead.template_length.setter
+    def template_length(self, new_tlen):
+        _lib.bam_read_set_template_length(self._d_read, new_tlen)
+    
+    @ReadOnlyBamRead.is_mapped.setter
+    def is_mapped(self, value):
+        return not _lib.bam_read_set_is_unmapped(self._d_read, value)
+
+    @ReadOnlyBamRead.mate_is_mapped.setter
+    def mate_is_mapped(self, value):
+        return not _lib.bam_read_set_mate_is_unmapped(self._d_read, value)
+
+    @ReadOnlyBamRead.proper_pair.setter
+    def proper_pair(self, value):
+        return _lib.bam_read_set_proper_pair(self._d_read, value)
+
+    @ReadOnlyBamRead.strand.setter
+    def strand(self, value):
+        assert(value == '+' or value == '-')
+        return _lib.bam_read_set_strand(self._d_read, value)
+
+    @ReadOnlyBamRead.mate_strand.setter
+    def mate_strand(self, strand, value):
+        assert(value == '+' or value == '-')
+        return _lib.bam_read_set_mate_strand(self._d_read, value)
+
+    @ReadOnlyBamRead.is_first_of_pair.setter
+    def is_first_of_pair(self, value):
+        return _lib.bam_read_set_is_first_of_pair(self._d_read, value)
+
+    @ReadOnlyBamRead.is_second_of_pair.setter
+    def is_second_of_pair(self, value):
+        return _lib.bam_read_set_is_second_of_pair(self._d_read, value)
+
+    @ReadOnlyBamRead.is_secondary.setter
+    def is_secondary(self, value):
+        return _lib.bam_read_set_is_secondary_alignment(self._d_read, value)
+
+    @ReadOnlyBamRead.failed_QC.setter
+    def failed_QC(self, value):
+        return _lib.bam_read_set_failed_quality_control(self._d_read, value)
+
+    @ReadOnlyBamRead.is_duplicate.setter
+    def is_duplicate(self, value):
+        return _lib.bam_read_set_is_duplicate(self._d_read, value)
 
     @_tagsetter("char")
     def setCharTag(self, tag, value):
@@ -254,6 +321,7 @@ class BamRead(ReadOnlyBamRead):
     @_tagsetter("string")
     def setStringTag(self, tag, value):
         pass
+
 
 class BamReadDRange(object):
     def __init__(self, creads):

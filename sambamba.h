@@ -132,27 +132,46 @@ areference_info_s bam_reader_references(bam_reader_t);
 /* get SAM representation of the read */
 dstring_s* df_bam_read_to_sam(bam_read_t);
 
+/* '+' or '-' */
+char bam_read_strand(bam_read_t);
+char bam_read_mate_strand(bam_read_t);
+
+/* character must be checked in the target language */
+void bam_read_set_strand(bam_read_t, char);
+void bam_read_set_mate_strand(bam_read_t, char);
+
 /* read sequence length (bp) */
 size_t bam_read_sequence_length(bam_read_t); 
 
 /* copy the sequence into a preallocated buffer 
-  (get its size using the previous function) */
+  (get its size using the above function) */
 void bam_read_copy_sequence(bam_read_t, char* buf); 
 
 dstring_s bam_read_name(bam_read_t);
+
 int8_t bam_read_mapping_quality(bam_read_t); /* -1 if missing */
+void bam_read_set_mapping_quality(bam_read_t, int8_t);
+
 int32_t bam_read_ref_id(bam_read_t);
+void bam_read_set_ref_id(bam_read_t, int32_t);
+
 char* bam_read_reference_name(bam_read_t);   /* zero-terminated */
 
 /* zero-based position on the reference */
 int32_t bam_read_position(bam_read_t);       
+void bam_read_set_position(bam_read_t, int32_t);
 
-/* '+' or '-' */
-char bam_read_strand(bam_read_t);
 int32_t bam_read_mate_ref_id(bam_read_t);
+void bam_read_set_mate_ref_id(bam_read_t, int32_t);
+
 int32_t bam_read_mate_position(bam_read_t);  /* zero-based */
+void bam_read_set_mate_position(bam_read_t, int32_t);
+
 uint16_t bam_read_flag(bam_read_t);
+void bam_read_set_flag(bam_read_t, uint16_t);
+
 int32_t bam_read_template_length(bam_read_t);
+void bam_read_set_template_length(bam_read_t, int32_t);
 
 typedef uint32_t cigar_operation_t;
 typedef struct { cigar_operation_t* buf; size_t len; } cigar_s;
@@ -176,6 +195,18 @@ bool bam_read_is_second_of_pair(bam_read_t);
 bool bam_read_is_secondary_alignment(bam_read_t);
 bool bam_read_failed_quality_control(bam_read_t);
 bool bam_read_is_duplicate(bam_read_t);
+
+void bam_read_set_is_paired(bam_read_t, bool);
+void bam_read_set_proper_pair(bam_read_t, bool);
+void bam_read_set_is_unmapped(bam_read_t, bool);
+void bam_read_set_mate_is_unmapped(bam_read_t, bool);
+void bam_read_set_is_reverse_strand(bam_read_t, bool);
+void bam_read_set_mate_is_reverse_strand(bam_read_t, bool);
+void bam_read_set_is_first_of_pair(bam_read_t, bool);
+void bam_read_set_is_second_of_pair(bam_read_t, bool);
+void bam_read_set_is_secondary_alignment(bam_read_t, bool);
+void bam_read_set_failed_quality_control(bam_read_t, bool);
+void bam_read_set_is_duplicate(bam_read_t, bool);
 
                         /* -------- Accessing read tags -------- */
 
