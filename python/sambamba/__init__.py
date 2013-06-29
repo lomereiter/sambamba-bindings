@@ -10,7 +10,7 @@ _lib = _ffi.dlopen(os.path.join(os.path.dirname(__file__), 'libsambamba.so'))
 _lib.attach()
 
 def _d_arr(type, cdata):
-    return _ffi.cast(type + "[%d]" % cdata.len, cdata.buf)
+    return list(_ffi.cast(type + "[%d]" % cdata.len, cdata.buf))
 
 def _d_str(cdata):
     return _ffi.string(cdata.buf, cdata.len)
@@ -61,28 +61,47 @@ class _tagsetter(object):
         return wrapper
 
 class CigarOperation(object):
-    def __init__(self, int32):
-        self._d_int32 = int32
+    def __repr__(self):
+        return str(self.length) + self.type
 
-    @property
-    def length(self):
-        return _lib.bam_cigar_operation_length(self._d_int32)
+    @staticmethod
+    def _raw(int32):
+        length = int32 >> 4
+        type = CigarOperation._type2char(int32 & 0xF)
+        return CigarOperation(length, type)
 
-    @property
-    def type(self):
-        return _lib.bam_cigar_operation_type(self._d_int32)
+    @staticmethod
+    def _type2char(i):
+        return "MIDNSHP=X????????"[i]
+
+    @staticmethod
+    def _char2type(c):
+        i = "MIDNSHP=X".find(c)
+        if i == -1:
+            raise "Invalid CIGAR operation: %s" % c
+        return i
+
+    def _int(self):
+        return (self.length << 4) + CigarOperation._char2type(self.type)
+
+    def __init__(self, length, type):
+        """
+        Type must be one of MIDNSHP=X
+        """
+        self.length = length
+        self.type = type
 
     @property
     def consumes_reference(self):
-        return _lib.bam_cigar_operation_consumes_ref(self._d_int32)
+        return "M=XDN".find(self.type) != -1
 
     @property
     def consumes_query(self):
-        return _lib.bam_cigar_operation_consumes_query(self._d_int32)
+        return "M=XIS".find(self.type) != -1
 
     @property
     def consumes_both(self):
-        return _lib.bam_cigar_operation_consumes_both(self._d_int32)
+        return "M=X".find(self.type) != -1
 
 class ReadOnlyBamRead(object):
     def __init__(self, d_ptr):
@@ -116,9 +135,14 @@ class ReadOnlyBamRead(object):
     @property
     def sequence(self):
         len = _lib.bam_read_sequence_length(self._d_read)
-        buf = _ffi.new(_byteType, len)
+        buf = _ffi.new(_byteType, len + 1)
         _lib.bam_read_copy_sequence(self._d_read, buf)
         return _ffi.string(buf)
+
+    @property
+    def base_qualities(self):
+        arr = _lib.bam_read_base_qualities(self._d_read)
+        return _d_arr("int8_t", arr)
 
     def __repr__(self):
         sam = _lib.df_bam_read_to_sam(self._d_read)
@@ -155,13 +179,17 @@ class ReadOnlyBamRead(object):
     @property
     def cigar(self):
         d_cigar = _lib.bam_read_cigar(self._d_read)
-        return [CigarOperation(op) for op in d_cigar.buf[0:d_cigar.len]]
+        return [CigarOperation._raw(op) for op in d_cigar.buf[0:d_cigar.len]]
+
+    @property
+    def cigar_string(self):
+        return "".join(str(c) for c in self.cigar)
 
     @property
     def extended_cigar(self):
         d_cigar = _lib.f_bam_read_extended_cigar(self._d_read)
-        result = [CigarOperation(op) for op in d_cigar.buf[0:d_cigar.len]]
-        _lib.free(d_cigar)
+        result = [CigarOperation._raw(op) for op in d_cigar.buf[0:d_cigar.len]]
+        _lib.free(d_cigar.buf)
         return result
 
     @property
@@ -215,6 +243,46 @@ class BamRead(ReadOnlyBamRead):
         _d_read.reader = reader
         self._c_data = cdata # keep alive
         ReadOnlyBamRead.__init__(self, _d_read)
+
+    @ReadOnlyBamRead.name.setter
+    def name(self, new_name):
+        assert(len(new_name) < 255)
+        arr = _lib.df_bam_read_set_name(self._d_read, new_name)
+        self._d_read.len = arr.len
+        self._d_read.buf = self._c_data = _ffi.new(_byteType, arr.len)
+        _lib.memcpy(self._c_data, arr.buf, arr.len)
+        _lib.d_free(arr)
+
+    @ReadOnlyBamRead.sequence.setter
+    def sequence(self, new_sequence):
+        """
+        Sets all base qualities to 0xFF
+        """
+        arr = _lib.df_bam_read_set_sequence(self._d_read, new_sequence)
+        self._d_read.len = arr.len
+        self._d_read.buf = self._c_data = _ffi.new(_byteType, arr.len)
+        _lib.memcpy(self._c_data, arr.buf, arr.len)
+        _lib.d_free(arr)
+
+    @ReadOnlyBamRead.base_qualities.setter
+    def base_qualities(self, base_qualities):
+        assert(len(base_qualities) == _lib.bam_read_sequence_length(self._d_read))
+        quals = _ffi.new("int8_t[]", base_qualities)
+        arr = _lib.df_bam_read_set_base_qualities(self._d_read, quals, len(base_qualities))
+        self._d_read.len = arr.len
+        self._d_read.buf = self._c_data = _ffi.new(_byteType, arr.len)
+        _lib.memcpy(self._c_data, arr.buf, arr.len)
+        _lib.d_free(arr)
+
+    @ReadOnlyBamRead.cigar.setter
+    def cigar(self, new_cigar):
+        length = len(new_cigar)
+        ints = _ffi.new("uint32_t[]", [c._int() for c in new_cigar])
+        arr = _lib.df_bam_read_set_cigar(self._d_read, ints, length)
+        self._d_read.len = arr.len
+        self._d_read.buf = self._c_data = _ffi.new(_byteType, arr.len)
+        _lib.memcpy(self._c_data, arr.buf, arr.len)
+        _lib.d_free(arr)
 
     @ReadOnlyBamRead.reference_id.setter
     def reference_id(self, new_id):
@@ -593,7 +661,7 @@ class PileupRead(ReadOnlyBamRead):
 
     @property
     def cigar_operation(self):
-        return CigarOperation(_lib.bam_pileup_read_cigar_operation(self._d_addr))
+        return CigarOperation._raw(_lib.bam_pileup_read_cigar_operation(self._d_addr))
 
     @property
     def cigar_operation_offset(self):
@@ -602,9 +670,9 @@ class PileupRead(ReadOnlyBamRead):
     @property
     def cigar_before(self):
         d_cigar = _lib.bam_pileup_read_cigar_before(self._d_addr)
-        return [CigarOperation(op) for op in d_cigar.buf[0:d_cigar.len]]
+        return [CigarOperation._raw(op) for op in d_cigar.buf[0:d_cigar.len]]
 
     @property
     def cigar_after(self):
         d_cigar = _lib.bam_pileup_read_cigar_after(self._d_addr)
-        return [CigarOperation(op) for op in d_cigar.buf[0:d_cigar.len]]
+        return [CigarOperation._raw(op) for op in d_cigar.buf[0:d_cigar.len]]

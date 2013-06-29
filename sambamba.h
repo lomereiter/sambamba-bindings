@@ -1,5 +1,6 @@
 /* naming conventions:
- f_... means that free is to be called on the return value
+ f_... means that free is to be called on the return value (if it's a pointer)
+       or on `buf` field of the return value;
  df_... or ...new... means that d_free is to be called */
 
 enum {
@@ -144,10 +145,18 @@ void bam_read_set_mate_strand(bam_read_t, char);
 size_t bam_read_sequence_length(bam_read_t); 
 
 /* copy the sequence into a preallocated buffer 
-  (get its size using the above function) */
+  (get its size using the above function, and add one for the '\0') */
 void bam_read_copy_sequence(bam_read_t, char* buf); 
 
+/* automatically resizes the qualities to the length of the sequence
+   and sets them all to 0xFF (i.e. missing) */
+buffer_s* df_bam_read_set_sequence(bam_read_t, const char* new_sequence);
+
+aint8_s bam_read_base_qualities(bam_read_t);
+buffer_s* df_bam_read_set_base_qualities(bam_read_t, int8_t* buf, size_t len);
+
 dstring_s bam_read_name(bam_read_t);
+buffer_s* df_bam_read_set_name(bam_read_t, const char* new_name);
 
 int8_t bam_read_mapping_quality(bam_read_t); /* -1 if missing */
 void bam_read_set_mapping_quality(bam_read_t, int8_t);
@@ -173,15 +182,16 @@ void bam_read_set_flag(bam_read_t, uint16_t);
 int32_t bam_read_template_length(bam_read_t);
 void bam_read_set_template_length(bam_read_t, int32_t);
 
-typedef uint32_t cigar_operation_t;
-typedef struct { cigar_operation_t* buf; size_t len; } cigar_s;
-uint32_t bam_cigar_operation_length(cigar_operation_t);
-char bam_cigar_operation_type(cigar_operation_t);           /* MIDNSHP=X */
-bool bam_cigar_operation_consumes_ref(cigar_operation_t);   /* types M=XDN */
-bool bam_cigar_operation_consumes_query(cigar_operation_t); /* types M=XIS */
-bool bam_cigar_operation_consumes_both(cigar_operation_t);  /* types M=X */
+typedef struct { uint32_t* buf; size_t len; } cigar_s;
+uint32_t bam_cigar_operation_length(uint32_t);
+char bam_cigar_operation_type(uint32_t);           /* MIDNSHP=X */
+bool bam_cigar_operation_consumes_ref(uint32_t);   /* types M=XDN */
+bool bam_cigar_operation_consumes_query(uint32_t); /* types M=XIS */
+bool bam_cigar_operation_consumes_both(uint32_t);  /* types M=X */
 cigar_s bam_read_cigar(bam_read_t);
-cigar_s bam_read_extended_cigar(bam_read_t);
+cigar_s f_bam_read_extended_cigar(bam_read_t);
+
+buffer_s* df_bam_read_set_cigar(bam_read_t, uint32_t* buf, size_t len);
 
 /* read flags */
 bool bam_read_is_paired(bam_read_t);
@@ -286,7 +296,7 @@ cigar_s bam_pileup_read_cigar_before(pileup_read_t);
 cigar_s bam_pileup_read_cigar_after(pileup_read_t);
 
 /* current CIGAR operation */
-cigar_operation_t bam_pileup_read_cigar_operation(pileup_read_t);
+uint32_t bam_pileup_read_cigar_operation(pileup_read_t);
 
 /* how many bases were consumed from the current CIGAR operation */
 uint32_t bam_pileup_read_cigar_operation_offset(pileup_read_t);

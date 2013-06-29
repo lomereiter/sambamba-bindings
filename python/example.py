@@ -38,8 +38,10 @@ for r in bam.reads():
     if r.tag('NM') > 2:
         r.setInt16Tag('NM', -42)
         r.position = 666
-        assert(r.tag('NM') == -42)
-        r.setStringTag('XW', "don't believe NM tag for this read")
+        r.sequence = "A" * 1000
+        r.base_qualities = [25] * 1000
+        r.cigar = [CigarOperation(333, 'M'), CigarOperation(333, 'S')]
+        r.setStringTag('XW', "this read is weird")
     w.writeRead(r)
 w.close()
 
@@ -47,7 +49,11 @@ new_bam = BamReader(new_fn)
 print("Reads with NM == -42: %s" % sum(1 for r in new_bam.reads() if r.tag('NM') == -42))
 for read in new_bam.reads():
     if read.tag('NM') == -42:
-        assert(read.tag('XW') != None and read.position == 666)
+        assert(read.tag('XW') != None)
+        assert(read.position == 666)
+        assert(read.cigar_string == "333M333S")
+        assert(read.sequence == "A" * 1000)
+        assert(read.base_qualities == [25] * 1000)
 
 os.unlink(new_fn)
 os.unlink(filename + ".bai")

@@ -661,6 +661,35 @@ mixin functionN!("sam_header_new", "samHeaderNew", char*);
 mixin functionN!("df_sam_header_text", "samHeaderText", SamHeader);
 
 /* ------------------------------- modifying reads ------------------------------------------ */
+
+auto bamReadSetName(BamRead read, immutable(char)* name) {
+    auto r = read.dup;
+    r.name = to!string(name);
+    return d_array(r.getBuffer());
+}
+mixin functionN!("df_bam_read_set_name", "bamReadSetName", BamRead, immutable(char)*);
+
+auto bamReadSetSequence(BamRead read, immutable(char)* sequence) {
+    auto r = read.dup;
+    r.sequence = to!string(sequence);
+    return d_array(r.getBuffer());
+}
+mixin functionN!("df_bam_read_set_sequence", "bamReadSetSequence", BamRead, immutable(char)*);
+
+auto bamReadSetBaseQuals(BamRead read, ubyte* buf, size_t len) {
+    auto r = read.dup;
+    r.base_qualities = buf[0 .. len];
+    return d_array(r.getBuffer());
+}
+mixin functionN!("df_bam_read_set_base_qualities", "bamReadSetBaseQuals", BamRead, ubyte*, size_t);
+
+auto bamReadSetCigar(BamRead read, CigarOperation* cigar, size_t len) {
+    auto r = read.dup;
+    r.cigar = cigar[0 .. len];
+    return d_array(r.getBuffer());
+}
+mixin functionN!("df_bam_read_set_cigar", "bamReadSetCigar", BamRead, CigarOperation*, size_t);
+
 auto setTagValue(T)(BamRead read, immutable(char)* tagname, T value) {
     auto r = read.dup; // TODO: find a way without so much copying
     r[tagname[0 .. 2]] = value;
