@@ -1,6 +1,6 @@
 import os
 fname = os.path.join(os.path.dirname(__file__), 'sambamba.h')
-with open('sambamba.h', 'r') as f:
+with open(fname, 'r') as f:
     _header = f.read()
 
 from cffi import FFI
