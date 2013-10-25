@@ -353,13 +353,17 @@ mixin methodN!("task_pool_finish", TaskPool, "finish");
 /* --------------------- BamReader interface -------------------------------------------------------------- */
 BamReader bamReaderNew1(immutable(char)* filename) { 
     mixin(returnNullOnException(q{
-        return new BamReader(to!string(filename)); 
+        auto bam = new BamReader(to!string(filename)); 
+        bam.assumeSequentialProcessing();
+        return bam;
     }));
 }
 
 BamReader bamReaderNew2(immutable(char)* filename, TaskPool taskpool) { 
     mixin(returnNullOnException(q{
-        return new BamReader(to!string(filename), taskpool); 
+        auto bam = new BamReader(to!string(filename), taskpool); 
+        bam.assumeSequentialProcessing();
+        return bam;
     }));
 }
 
