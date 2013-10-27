@@ -11,36 +11,73 @@ typedef int bool;
 static VALUE cBamReadIter;
 static VALUE cBamRead;
 
-static void rb_bam_read_deallocate(void* ptr)
+/* ------------------------ bam read interface ------------------------------ */
+typedef bam_read_s rb_bam_read;
+
+static void rb_bam_read_deallocate(rb_bam_read* ptr)
 {
-    free(ptr);
+    if (ptr->buf != NULL)
+        xfree(ptr->buf);
+    xfree(ptr);
 }
 
-typedef struct {
-    size_t len;
-    bam_reader_t reader;
-    VALUE buf;
-} rb_bam_read;
-
-static bam_read_s convert_to_bam_read_s(rb_bam_read * read) {
-    bam_read_s result;
-    result.len = read->len;
-    result.buf = (uint8_t*)(RSTRING_PTR(read->buf));
-    result.reader = read->reader;
-    return result;
+static inline rb_bam_read * BAM_READ(VALUE self) {
+    rb_bam_read * read;
+    Data_Get_Struct(self, rb_bam_read, read);
+    return read;
 }
 
-static VALUE rb_bam_read_allocate(VALUE klass)
-{
-    rb_bam_read * read = malloc(sizeof(rb_bam_read));
-    return Data_Wrap_Struct(klass, NULL, &rb_bam_read_deallocate, read);
+static VALUE rb_bam_read_name(VALUE self) {
+    dstring_s result = bam_read_name(BAM_READ(self));
+    return rb_str_new(result.buf, result.len);
 }
 
+#define DEFINE_BAM_FLAG_GETTER(flagname)\
+    static VALUE rb_bam_read_##flagname(VALUE self) {\
+        return bam_read_##flagname(BAM_READ(self)) ? Qtrue : Qfalse;\
+    }
+
+#define DEFINE_BAM_FLAG_SETTER(flagname)\
+    static VALUE rb_bam_read_set_##flagname(VALUE self, VALUE new_value) {\
+        if (new_value == Qtrue)\
+            bam_read_set_##flagname(BAM_READ(self), 1);\
+        else if (new_value == Qfalse)\
+            bam_read_set_##flagname(BAM_READ(self), 0);\
+        else\
+            rb_throw("Flag must be boolean", rb_eTypeError);\
+        return Qnil;\
+    }
+
+DEFINE_BAM_FLAG_GETTER(is_paired)
+DEFINE_BAM_FLAG_GETTER(proper_pair)
+DEFINE_BAM_FLAG_GETTER(is_unmapped)
+DEFINE_BAM_FLAG_GETTER(mate_is_unmapped)
+DEFINE_BAM_FLAG_GETTER(is_reverse_strand)
+DEFINE_BAM_FLAG_GETTER(mate_is_reverse_strand)
+DEFINE_BAM_FLAG_GETTER(is_first_of_pair)
+DEFINE_BAM_FLAG_GETTER(is_second_of_pair)
+DEFINE_BAM_FLAG_GETTER(is_secondary_alignment)
+DEFINE_BAM_FLAG_GETTER(failed_quality_control)
+DEFINE_BAM_FLAG_GETTER(is_duplicate)
+
+DEFINE_BAM_FLAG_SETTER(is_paired)
+DEFINE_BAM_FLAG_SETTER(proper_pair)
+DEFINE_BAM_FLAG_SETTER(is_unmapped)
+DEFINE_BAM_FLAG_SETTER(mate_is_unmapped)
+DEFINE_BAM_FLAG_SETTER(is_reverse_strand)
+DEFINE_BAM_FLAG_SETTER(mate_is_reverse_strand)
+DEFINE_BAM_FLAG_SETTER(is_first_of_pair)
+DEFINE_BAM_FLAG_SETTER(is_second_of_pair)
+DEFINE_BAM_FLAG_SETTER(is_secondary_alignment)
+DEFINE_BAM_FLAG_SETTER(failed_quality_control)
+DEFINE_BAM_FLAG_SETTER(is_duplicate)
+
+
+/* ------------------------ bam read iterator ------------------------------- */
 static VALUE rb_reads(VALUE self, VALUE filename) {
     bam_reader_t reader;
     bam_read_range_t read_range;
     size_t len;
-    volatile VALUE buf;
     rb_bam_read * read;
     VALUE val;
 
@@ -57,30 +94,18 @@ static VALUE rb_reads(VALUE self, VALUE filename) {
         if (len == 0)
             break;
 
-        read = malloc(sizeof(rb_bam_read));
+        read = ALLOC(rb_bam_read);
         read->len = len;
-        
-        buf = rb_str_buf_new(len);
+        read->buf = ALLOC_N(uint8_t, len);
         read->reader = bam_readrange_front_copy_into_and_pop_front(read_range, 
-                (uint8_t*)(RSTRING_PTR(buf)));
+                                                                   read->buf);
 
-        read->buf = buf;
         val = Data_Wrap_Struct(cBamRead, NULL, &rb_bam_read_deallocate, read);
 
         rb_yield(val);
     }
 
     return Qnil;
-}
-
-static VALUE rb_bam_read_name(VALUE self) {
-    bam_read_s r;
-    dstring_s result;
-    rb_bam_read * read;
-    Data_Get_Struct(self, rb_bam_read, read);
-    r = convert_to_bam_read_s(read);
-    result = bam_read_name(&r);
-    return rb_str_new(result.buf, result.len);
 }
 
 void Init_sambamba() {
@@ -90,6 +115,30 @@ void Init_sambamba() {
     rb_define_method(cBamReadIter, "reads", &rb_reads, 1);
 
     cBamRead = rb_define_class("BamRead", rb_cObject);
-    rb_define_alloc_func(cBamRead, &rb_bam_read_allocate);
     rb_define_method(cBamRead, "name", &rb_bam_read_name, 0);
+
+    rb_define_method(cBamRead, "is_paired", &rb_bam_read_is_paired, 0);
+    rb_define_method(cBamRead, "proper_pair", &rb_bam_read_proper_pair, 0);
+    rb_define_method(cBamRead, "is_unmapped", &rb_bam_read_is_unmapped, 0);
+    rb_define_method(cBamRead, "mate_is_unmapped", &rb_bam_read_mate_is_unmapped, 0);
+    rb_define_method(cBamRead, "is_reverse_strand", &rb_bam_read_is_reverse_strand, 0);
+    rb_define_method(cBamRead, "mate_is_reverse_strand", &rb_bam_read_mate_is_reverse_strand, 0);
+    rb_define_method(cBamRead, "is_first_of_pair", &rb_bam_read_is_first_of_pair, 0);
+    rb_define_method(cBamRead, "is_second_of_pair", &rb_bam_read_is_second_of_pair, 0);
+    rb_define_method(cBamRead, "is_secondary_alignment", &rb_bam_read_is_secondary_alignment, 0);
+    rb_define_method(cBamRead, "failed_quality_control", &rb_bam_read_failed_quality_control, 0);
+    rb_define_method(cBamRead, "is_duplicate", &rb_bam_read_is_duplicate, 0);
+
+    rb_define_method(cBamRead, "is_paired=", &rb_bam_read_set_is_paired, 1);
+    rb_define_method(cBamRead, "proper_pair=", &rb_bam_read_set_proper_pair, 1);
+    rb_define_method(cBamRead, "is_unmapped=", &rb_bam_read_set_is_unmapped, 1);
+    rb_define_method(cBamRead, "mate_is_unmapped=", &rb_bam_read_set_mate_is_unmapped, 1);
+    rb_define_method(cBamRead, "is_reverse_strand=", &rb_bam_read_set_is_reverse_strand, 1);
+    rb_define_method(cBamRead, "mate_is_reverse_strand=", &rb_bam_read_set_mate_is_reverse_strand, 1);
+    rb_define_method(cBamRead, "is_first_of_pair=", &rb_bam_read_set_is_first_of_pair, 1);
+    rb_define_method(cBamRead, "is_second_of_pair=", &rb_bam_read_set_is_second_of_pair, 1);
+    rb_define_method(cBamRead, "is_secondary_alignment=", &rb_bam_read_set_is_secondary_alignment, 1);
+    rb_define_method(cBamRead, "failed_quality_control=", &rb_bam_read_set_failed_quality_control, 1);
+    rb_define_method(cBamRead, "is_duplicate=", &rb_bam_read_set_is_duplicate, 1);
+
 }

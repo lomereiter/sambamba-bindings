@@ -36,7 +36,7 @@ typedef void* bam_reader_t; /* BAM reader object */
 
 typedef struct {
     size_t len;          /* length of raw data */
-    const uint8_t* buf;  /* raw data */
+    uint8_t* buf;  /* raw data */
     bam_reader_t reader; /* parent reader */
 } bam_read_s;                   
 typedef bam_read_s* bam_read_t; /* single read */
@@ -131,6 +131,9 @@ bam_reader_fetch(bam_reader_t, char* refname, uint32_t from, uint32_t to);
 areference_info_s bam_reader_references(bam_reader_t); 
 
 /* --------------------------------- BAM read ------------------------------- */
+
+/* setter function returns void iff it doesn't reallocate */
+/* otherwise, it returns modified buffer, which contents must be copied */
 
 /* get SAM representation of the read */
 dstring_s* df_bam_read_to_sam(bam_read_t);
