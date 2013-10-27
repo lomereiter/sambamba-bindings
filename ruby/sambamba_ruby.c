@@ -8,8 +8,18 @@ typedef int bool;
 
 #include "sambamba.h"
 
-static VALUE cBamReadIter;
+static VALUE cBamReader;
 static VALUE cBamRead;
+
+/* must be used only for return values where NULL means error */
+static inline void CHECK_FOR_NULL(void* ptr) {
+    if (ptr == NULL)
+        rb_throw(last_error_message(), rb_eRuntimeError);
+}
+
+static inline VALUE FROM_DSTRING(dstring_s str) {
+    return rb_str_new(str.buf, str.len);
+}
 
 /* ------------------------ bam read interface ------------------------------ */
 typedef bam_read_s rb_bam_read;
@@ -28,8 +38,7 @@ static inline rb_bam_read * BAM_READ(VALUE self) {
 }
 
 static VALUE rb_bam_read_name(VALUE self) {
-    dstring_s result = bam_read_name(BAM_READ(self));
-    return rb_str_new(result.buf, result.len);
+    return FROM_DSTRING(bam_read_name(BAM_READ(self)));
 }
 
 #define DEFINE_BAM_FLAG_GETTER(flagname)\
@@ -74,20 +83,12 @@ DEFINE_BAM_FLAG_SETTER(is_duplicate)
 
 
 /* ------------------------ bam read iterator ------------------------------- */
-static VALUE rb_reads(VALUE self, VALUE filename) {
-    bam_reader_t reader;
-    bam_read_range_t read_range;
+static VALUE rb_bam_read_iterator(VALUE self, bam_read_range_t read_range) {
     size_t len;
     rb_bam_read * read;
     VALUE val;
 
-    Check_Type(filename, T_STRING);
-    reader = bam_reader_new(StringValueCStr(filename));
-    if (reader == NULL)
-        rb_throw(last_error_message(), rb_eRuntimeError);
-    read_range = bam_reader_reads(reader);
-
-    RETURN_ENUMERATOR(self, 1, NULL);
+    RETURN_ENUMERATOR(self, 0, NULL);
 
     while (1) {
         len = bam_readrange_front_alloc_size(read_range);
@@ -105,14 +106,70 @@ static VALUE rb_reads(VALUE self, VALUE filename) {
         rb_yield(val);
     }
 
+    d_free(read_range);
     return Qnil;
+}
+
+/* ----------------------- bam reader interface ----------------------------- */
+typedef bam_reader_t rb_bam_reader;
+
+#include <stdio.h>
+static void rb_bam_reader_deallocate(rb_bam_reader* ptr) {
+    if (ptr != NULL)
+        d_free(ptr);
+}
+
+static VALUE rb_bam_reader_allocate(VALUE klass) {
+    rb_bam_reader reader = NULL;
+    return Data_Wrap_Struct(cBamReader, NULL, rb_bam_reader_deallocate, reader);
+}
+
+static inline rb_bam_reader BAM_READER(VALUE self) {
+    rb_bam_reader reader;
+    Data_Get_Struct(self, void, reader);
+    CHECK_FOR_NULL(reader);
+    return reader;
+}
+
+static VALUE rb_bam_reader_filename(VALUE self) {
+    return rb_str_new2(bam_reader_filename(BAM_READER(self)));
+}
+
+static VALUE rb_bam_reader_header(VALUE self) {
+    sam_header_t header = bam_reader_header(BAM_READER(self));
+    dstring_s* str = df_sam_header_text(header);
+    VALUE result = FROM_DSTRING(*str);
+    d_free(str);
+    return result;
+}
+
+static VALUE rb_bam_reader_initialize(VALUE self, VALUE filename) {
+    rb_bam_reader reader;
+    Check_Type(self, T_DATA);
+    Check_Type(filename, T_STRING);
+    reader = bam_reader_new(StringValueCStr(filename));
+    CHECK_FOR_NULL(reader);
+    RDATA(self)->data = reader;
+    return self;
+}
+
+static VALUE rb_bam_reader_reads(VALUE self) {
+    rb_bam_reader reader;
+    bam_read_range_t reads;
+    Data_Get_Struct(self, void, reader);
+    reads = bam_reader_reads(reader);
+    return rb_bam_read_iterator(self, reads);
 }
 
 void Init_sambamba() {
     attach();
 
-    cBamReadIter = rb_define_class("BamReadIter", rb_cObject);
-    rb_define_method(cBamReadIter, "reads", &rb_reads, 1);
+    cBamReader = rb_define_class("BamReader", rb_cObject);
+    rb_define_alloc_func(cBamReader, &rb_bam_reader_allocate);
+    rb_define_method(cBamReader, "initialize", &rb_bam_reader_initialize, 1);
+    rb_define_method(cBamReader, "filename", &rb_bam_reader_filename, 0);
+    rb_define_method(cBamReader, "header", &rb_bam_reader_header, 0);
+    rb_define_method(cBamReader, "reads", &rb_bam_reader_reads, 0);
 
     cBamRead = rb_define_class("BamRead", rb_cObject);
     rb_define_method(cBamRead, "name", &rb_bam_read_name, 0);
