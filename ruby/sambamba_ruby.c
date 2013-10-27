@@ -9,6 +9,7 @@ typedef int bool;
 #include "sambamba.h"
 
 static VALUE cBamReader;
+static VALUE cBamReadEnumerator;
 static VALUE cBamRead;
 
 /* must be used only for return values where NULL means error */
@@ -35,6 +36,13 @@ static inline rb_bam_read * BAM_READ(VALUE self) {
     rb_bam_read * read;
     Data_Get_Struct(self, rb_bam_read, read);
     return read;
+}
+
+static VALUE rb_bam_read_to_sam(VALUE self) {
+    dstring_s* sam = df_bam_read_to_sam(BAM_READ(self));
+    volatile VALUE result = FROM_DSTRING(*sam);
+    d_free(sam);
+    return result;
 }
 
 static VALUE rb_bam_read_name(VALUE self) {
@@ -83,10 +91,13 @@ DEFINE_BAM_FLAG_SETTER(is_duplicate)
 
 
 /* ------------------------ bam read iterator ------------------------------- */
-static VALUE rb_bam_read_iterator(VALUE self, bam_read_range_t read_range) {
+static VALUE rb_bam_read_enumerator_each(VALUE self) {
+    bam_read_range_t read_range;
     size_t len;
     rb_bam_read * read;
     VALUE val;
+
+    Data_Get_Struct(self, void, read_range);
 
     RETURN_ENUMERATOR(self, 0, NULL);
 
@@ -106,7 +117,6 @@ static VALUE rb_bam_read_iterator(VALUE self, bam_read_range_t read_range) {
         rb_yield(val);
     }
 
-    d_free(read_range);
     return Qnil;
 }
 
@@ -154,15 +164,29 @@ static VALUE rb_bam_reader_initialize(VALUE self, VALUE filename) {
 }
 
 static VALUE rb_bam_reader_reads(VALUE self) {
-    rb_bam_reader reader;
+    rb_bam_reader reader = BAM_READER(self);
+    bam_read_range_t reads = bam_reader_reads(reader);
+    CHECK_FOR_NULL(reads);
+    return Data_Wrap_Struct(cBamReadEnumerator, NULL, &d_free, reads);
+}
+
+static VALUE rb_bam_reader_fetch(VALUE self, VALUE refname, VALUE from, VALUE to) {
+    rb_bam_reader reader = BAM_READER(self);
     bam_read_range_t reads;
-    Data_Get_Struct(self, void, reader);
-    reads = bam_reader_reads(reader);
-    return rb_bam_read_iterator(self, reads);
+    Check_Type(refname, T_STRING);
+    Check_Type(from, T_FIXNUM);
+    Check_Type(to, T_FIXNUM);
+    reads = bam_reader_fetch(reader, RSTRING_PTR(refname), FIX2UINT(from), FIX2UINT(to));
+    CHECK_FOR_NULL(reads);
+    return Data_Wrap_Struct(cBamReadEnumerator, NULL, &d_free, reads);
 }
 
 void Init_sambamba() {
     attach();
+
+    cBamReadEnumerator = rb_define_class("BamReadEnumerator", rb_cObject);
+    rb_define_method(cBamReadEnumerator, "each", &rb_bam_read_enumerator_each, 0);
+    rb_include_module(cBamReadEnumerator, rb_mEnumerable);
 
     cBamReader = rb_define_class("BamReader", rb_cObject);
     rb_define_alloc_func(cBamReader, &rb_bam_reader_allocate);
@@ -170,8 +194,11 @@ void Init_sambamba() {
     rb_define_method(cBamReader, "filename", &rb_bam_reader_filename, 0);
     rb_define_method(cBamReader, "header", &rb_bam_reader_header, 0);
     rb_define_method(cBamReader, "reads", &rb_bam_reader_reads, 0);
+    rb_define_method(cBamReader, "fetch", &rb_bam_reader_fetch, 3);
 
     cBamRead = rb_define_class("BamRead", rb_cObject);
+    rb_define_method(cBamRead, "to_sam", &rb_bam_read_to_sam, 0);
+    rb_define_method(cBamRead, "to_s", &rb_bam_read_to_sam, 0);
     rb_define_method(cBamRead, "name", &rb_bam_read_name, 0);
 
     rb_define_method(cBamRead, "is_paired", &rb_bam_read_is_paired, 0);
