@@ -1,6 +1,6 @@
 .PHONY: sambamba-bindings
 
-FLAGS=-O -release -inline
+FLAGS=-O -release -inline --exclude=etc
 DEBUG_FLAGS=-debug
 
 sambamba-bindings:
